@@ -1,70 +1,53 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/types.h>
 
-#define X 1.0
+#define M 100
+#define K 100
+#define a 1.0
+#define L 1.0
 #define T 1.0
-#define M 100   // шагов по x
-#define K 100   // шагов по t
-
-double phi(double x) {
-    return (x * x) / 2;  // начальное условие
-}
-
-double psi(double t) {
-    return (t * t) / 2;  // граничное условие
-}
-
-double f(double t, double x) {
-    return 0;  // правая часть
-}
 
 int main() {
-    double h = X / M;
+    double h = L / (M - 1);
     double tau = T / K;
-    double a = 1.0;
 
-    double CFL = a * tau / h;
-    if (CFL > 1.0) {
-        printf("Ошибка: нарушено условие устойчивости CFL = %.2f > 1\n", CFL);
+    // Выделение памяти: u[K][M] → одномерный массив
+    double *u = malloc(K * M * sizeof(double));
+    if (!u) {
+        printf("Ошибка выделения памяти\n");
         return 1;
     }
 
-    double u[K+1][M+1];
-
-    // начальные условия: t = 0
-    for (int m = 0; m <= M; m++) {
+    // начальное условие: u[0][m] = sin(pi * x)
+    for (int m = 0; m < M; m++) {
         double x = m * h;
-        u[0][m] = phi(x);
+        u[0 * M + m] = 0;
     }
 
-    // граничные условия: x = 0
-    for (int k = 1; k <= K; k++) {
-        double t = k * tau;
-        u[k][0] = psi(t);
+    // шаги по времени
+    for (int k = 0; k < K - 1; k++) {
+        for (int m = 1; m < M - 1; m++) {
+            double avg = 0.5 * (u[k * M + m + 1] + u[k * M + m - 1]);
+            double flux = (a * tau) / (2.0 * h) * (u[k * M + m + 1] - u[k * M + m - 1]);
+            u[(k + 1) * M + m] = avg + flux;
+        }
+        // граничные условия
+        u[(k + 1) * M + 0] = 0;
+        u[(k + 1) * M + (M - 1)] = 0;
     }
 
-    // основной цикл по времени и пространству (схема "левый уголок")
+    // запись в файл
+    FILE *fout = fopen("solution_conseq.txt", "w");
     for (int k = 0; k < K; k++) {
-        double t = k * tau;
-        for (int m = 1; m <= M; m++) {
-            double x = m * h;
-            u[k+1][m] = u[k][m]
-                - CFL * (u[k][m] - u[k][m-1])
-                + tau * f(t, x);
+        for (int m = 0; m < M; m++) {
+            fprintf(fout, "%.6f ", u[k * M + m]);
         }
+        fprintf(fout, "\n");
     }
+    fclose(fout);
+    free(u);
 
-    // запись результата в файл
-    FILE *out = fopen("solution_conseq.txt", "w");
-    for (int k = 0; k <= K; k++) {
-        for (int m = 0; m <= M; m++) {
-            fprintf(out, "%.5f ", u[k][m]);
-        }
-        fprintf(out, "\n");
-    }
-    fclose(out);
-
-    printf("Решение сохранено в файл solution_conseq.txt\n");
     return 0;
 }
