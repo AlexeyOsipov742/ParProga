@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 
     double integral = sum * h;
     printf("Интеграл ≈ %.10f\n", integral);
-    printf("⏱ Время: %.6f сек\n", (double)(end - start) / CLOCKS_PER_SEC);
+    printf("Время: %.6f сек\n", (double)(end - start) / CLOCKS_PER_SEC);
     return 0;
 }
 

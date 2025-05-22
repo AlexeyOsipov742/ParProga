@@ -1,12 +1,11 @@
 #!/bin/bash
-echo -n > timing_log.txt
+
+gcc -o parallel_integral parallel_integral.c -lm -lpthread
+> timing_log.txt
 
 for np in 1 2 4 8 16; do
-  for h in 0.01 0.005 0.001 0.0005 0.0001; do
-    echo "Запуск: np=$np, h=$h"
-    export H_STEP=$h
-    mpirun --oversubscribe -np $np ./parallel_integral.o
+  for eps in 1e-2 1e-3 1e-4 1e-5 1e-6; do
+    ./parallel_integral $np $eps >> timing_log.txt
   done
 done
-
 

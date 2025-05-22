@@ -1,61 +1,72 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <mpi.h>
+#include <pthread.h>
+#include <time.h>
+
+typedef struct {
+    int id;
+    int num_threads;
+    double a, b;
+    double epsilon;
+    double result;
+} ThreadData;
 
 double f(double x) {
-    return cos(1.0 / (x * x));
+    return sin(1.0 / (x * x));
 }
 
-int main(int argc, char *argv[]) {
-    MPI_Init(&argc, &argv);
+void* integrate(void* arg) {
+    ThreadData* data = (ThreadData*)arg;
+    double a_local = data->a + (data->b - data->a) * data->id / data->num_threads;
+    double b_local = data->a + (data->b - data->a) * (data->id + 1) / data->num_threads;
+    double h = sqrt(12.0 * data->epsilon / (b_local - a_local));
+    int n = (int)((b_local - a_local) / h);
+    h = (b_local - a_local) / n;
 
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    double a = 0.01;
-    double b = 1.0;
-    double h = 1e-5;  // значение по умолчанию
-
-    // Переопределение шага через переменную окружения
-    const char* h_env = getenv("H_STEP");
-    if (h_env) {
-        double parsed = atof(h_env);
-        if (parsed > 0 && parsed < (b - a)) {
-            h = parsed;
-        }
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        double x1 = a_local + i * h;
+        double x2 = x1 + h;
+        sum += (f(x1) + f(x2)) * h / 2.0;
     }
 
-    long long N = (long long)((b - a) / h);
-    double local_sum = 0.0;
+    data->result = sum;
+    return NULL;
+}
 
-    double t_start = MPI_Wtime();
-
-    // Распределение по кругу
-    for (long long i = rank; i < N; i += size) {
-        double x = a + i * h + h / 2.0;
-        local_sum += f(x);
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <num_threads> <epsilon>\n", argv[0]);
+        return 1;
     }
 
-    double total_sum = 0.0;
-    MPI_Reduce(&local_sum, &total_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    int num_threads = atoi(argv[1]);
+    double epsilon = atof(argv[2]);
+    double a = 0.01, b = 1.0;
 
-    double t_end = MPI_Wtime();
+    pthread_t threads[num_threads];
+    ThreadData data[num_threads];
 
-    if (rank == 0) {
-        double integral = total_sum * h;
-        printf("Интеграл ≈ %.10f\n", integral);
-        printf("np = %d, h = %.8f, время = %.6f сек\n", size, h, t_end - t_start);
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-        FILE *log = fopen("timing_log.txt", "a");
-        if (log) {
-            fprintf(log, "np=%d h=%.8f time=%.6f\n", size, h, t_end - t_start);
-            fclose(log);
-        }
+    for (int i = 0; i < num_threads; i++) {
+        data[i] = (ThreadData){.id = i, .num_threads = num_threads, .a = a, .b = b, .epsilon = epsilon, .result = 0};
+        pthread_create(&threads[i], NULL, integrate, &data[i]);
     }
 
-    MPI_Finalize();
+    double total = 0.0;
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+        total += data[i].result;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    printf("Result: %.10f\n", total);
+    printf("np=%d eps=%.1e time=%.6f\n", num_threads, epsilon, time);
     return 0;
 }
 
